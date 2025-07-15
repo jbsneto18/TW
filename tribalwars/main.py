@@ -5,7 +5,6 @@ import random
 import threading
 from datetime import datetime
 import undetected_chromedriver as uc
-from selenium.common import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -148,15 +147,37 @@ class TribalWarsBot:
                 totais[u] = 0
         return totais
 
-    def distribuir_tropas_por_peso(self, total, pesos, slots):
-        pesos = pesos[:slots]
-        soma = sum(pesos)
-        if not soma or not total:
-            return [0]*slots
-        base = [int(total*p/soma) for p in pesos]
+    def distribuir_tropas_por_peso(self, total: int, slots: int) -> list[int]:
+        """
+        Divide `total` tropas em `slots` sub‑coletas
+        usando as frações definidas:
+
+          1 slot  → tudo em pequena
+          2 slots → pequena/média = 2/3, 1/3
+          3 slots → pequena/média/grande = 6/11, 3/11, 2/11
+          4+ slots→ pequena/média/grande/extrema = 15/26, 6/26, 3/26, 2/26
+        """
+        # Escolhe numeradores conforme slots
+        if slots <= 1:
+            nums = [1, 0, 0, 0]
+        elif slots == 2:
+            nums = [2, 1, 0, 0]
+        elif slots == 3:
+            nums = [6, 3, 2, 0]
+        else:
+            nums = [15, 6, 3, 2]
+
+        nums = nums[:slots]
+        S = sum(nums)
+        if S == 0 or total == 0:
+            return [0] * slots
+
+        # Calcula divisão base e distribui resto
+        base = [total * n // S for n in nums]
         resto = total - sum(base)
         for i in range(resto):
-            base[i%slots] += 1
+            base[i % slots] += 1
+
         return base
 
     def wait_random(self, min_sec=1.0, max_sec=3.5):
@@ -164,7 +185,6 @@ class TribalWarsBot:
 
     def bot_coleta(self):
         unidades = ['spear', 'sword', 'axe']
-        pesos = [1, 1.5, 3, 5]
         print(f"[{self.world}][{self.village_id}][COLETA] Iniciando rotina de coleta")
         while "game.php" not in self.driver.current_url:
             time.sleep(2)
@@ -193,9 +213,9 @@ class TribalWarsBot:
                     time.sleep(300)
                     continue
 
-                q_spears = self.distribuir_tropas_por_peso(total_spears, pesos, len(blocos_indexaveis))
-                q_swords = self.distribuir_tropas_por_peso(total_swords, pesos, len(blocos_indexaveis))
-                q_axe = self.distribuir_tropas_por_peso(total_axe, pesos, len(blocos_indexaveis))
+                q_spears = self.distribuir_tropas_por_peso(total_spears, len(blocos_indexaveis))
+                q_swords = self.distribuir_tropas_por_peso(total_swords, len(blocos_indexaveis))
+                q_axe = self.distribuir_tropas_por_peso(total_axe, len(blocos_indexaveis))
 
                 for idx, bloco in enumerate(blocos_indexaveis):
                     if bloco in blocos_ocupados:
@@ -287,6 +307,7 @@ class TribalWarsBot:
         caminho_arquivo = f"perdas_{self.world}.json"
         perdas_ids = set(json.load(open(caminho_arquivo)).keys()) if os.path.exists(caminho_arquivo) else set()
         ciclos = 0
+        print(f"Ids perigosos {perdas_ids}")
         while True:
             self.semaforo.acquire()
             for tgt in random.sample(self.targets, len(self.targets)):
@@ -397,7 +418,8 @@ class TribalWarsBot:
             print(f"[{self.world}][{vid}][START] Threads iniciadas para coleta e ataque")
 
 if __name__ == '__main__':
-    worlds = ['br135', 'br136']
+    #worlds = ['br135', 'br136']
+    worlds = ['br136']
     # 1 único semáforo para sincronizar ambos os mundos
     global_semaforo = threading.Semaphore(1)
 
@@ -414,7 +436,7 @@ if __name__ == '__main__':
     raw_cookies = d1.get_cookies()
 
     # driver 2 (clone de sessão)
-    opts2 = uc.ChromeOptions()
+    """opts2 = uc.ChromeOptions()
     opts2.add_argument('--no-sandbox')
     opts2.add_argument('--disable-blink-features=AutomationControlled')
     d2 = uc.Chrome(options=opts2)
@@ -429,13 +451,13 @@ if __name__ == '__main__':
     # já entra diretamente no mundo 2
     d2.get(f"https://www.tribalwars.com.br/page/play/{worlds[1]}")
     while 'game.php' not in d2.current_url:
-        time.sleep(1)
+        time.sleep(1)"""
 
     # instancia um bot para cada driver/mundo
     bot1 = TribalWarsBot(d1, global_semaforo)
-    bot2 = TribalWarsBot(d2, global_semaforo)
+    #bot2 = TribalWarsBot(d2, global_semaforo)
     bot1.start()
-    bot2.start()
+    #bot2.start()
 
     # mantém o script rodando
     while True:
